@@ -622,6 +622,21 @@ func filled(m, have map[string]string, secret func(string) bool) map[string]stri
 // skill whose files are as they are here is left alone. The subagents
 // replace the ones here too, unless b is from a magpie that didn't carry
 // them.
+// hasInstrSet is whether the bundle carries the instruction set id. ""
+// and the default set are always there: every library has the default
+// set, and an empty id means it is the one in use.
+func (b *Bundle) hasInstrSet(id string) bool {
+	if id == "" || id == defaultSet {
+		return true
+	}
+	for _, s := range b.Instructions.Sets {
+		if s.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 func Put(b *Bundle) (*Result, error) {
 	if err := b.check(); err != nil {
 		return nil, err
@@ -805,8 +820,19 @@ func Put(b *Bundle) (*Result, error) {
 				return err
 			}
 		}
+		// which set is on is this computer's own choice (#7327): a sync
+		// shares the sets and their texts, and keeps the set this
+		// computer has on — it takes the bundle's only when nothing is
+		// chosen here yet, or the set it uses is no longer among the
+		// bundle's (removed on another computer)
+		active := l.Instructions.Active
+		if len(l.Instructions.Sets) == 0 && active == "" {
+			active = b.Instructions.Active // nothing chosen here yet
+		} else if !b.hasInstrSet(active) {
+			active = b.Instructions.Active // the set it uses isn't in the bundle
+		}
 		l.Instructions = Instructions{Agents: slices.Sorted(slices.Values(orNone(b.Instructions.Agents))),
-			Sets: slices.Clone(b.Instructions.Sets), Active: b.Instructions.Active}
+			Sets: slices.Clone(b.Instructions.Sets), Active: active}
 		for i := range l.Instructions.Sets {
 			s := &l.Instructions.Sets[i]
 			s.File = files[s.ID]
